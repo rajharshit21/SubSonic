@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "axios": "^1.9.0",
+    "rubberband": "^0.2.0",
+    "sqlite3": "^5.1.7",
+    "starlette": "^1.0.7",
+    "wavesurfer.js": "^7.9.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.10",
+    "autoprefixer": "^10.4.21"
+  }
+}

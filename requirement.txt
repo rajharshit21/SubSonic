@@ -1,0 +1,11 @@
+fastapi
+numpy
+uvicorn
+pydub
+librosa
+soundfile
+scipy
+noisereduce
+pedalboard
+python-dotenv
+websockets
