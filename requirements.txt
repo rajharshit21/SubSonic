@@ -12,4 +12,5 @@ websockets
 openai
 gTTS
 sqlalchemy
+python-multipart
 
