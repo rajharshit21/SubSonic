@@ -1,57 +1,57 @@
 # main.py
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # Must be before any imports
 
 from pathlib import Path
-import os, shutil, uuid
+import shutil
+import uuid
+
 from fastapi import FastAPI, UploadFile, File, Form, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from pydub import AudioSegment
 
-
-
 # ── Local modules
 from api.routes import router as audio_router
 from api.live_audio_ws import router as live_router
 from api import analyze as analytics
 from api import tts_api
-# from api import analytics
-
 from audio_engine.effects.denoise import remove_noise
-
 from api.tts_api import router as tts_router
 from audio_engine.effects.autotune import autotune_chunk
 from models.deep_denoise import deep_denoise
 from audio_engine.effects.basic import apply_pitch_and_speed
 from audio_engine.effects.clarity import clarity_boost
-from audio_engine.effects.basic import apply_pitch_and_speed
-# ── Imports for audio processing
 
-
-
-
-# ── Basic setup
-load_dotenv()
-AudioSegment.converter = r"D:\Projects Git\SubSonic\ffmpeg\bin\ffmpeg.exe"
-TEMP_DIR = Path("temp")
-TEMP_DIR.mkdir(exist_ok=True)
-
+# === Initialize FastAPI app
 app = FastAPI(
     title="SubSonic Voice Changer API",
     root_path="/",
     redirect_slashes=True,
 )
 
-# ── CORS
+# === Load .env
+load_dotenv()
+
+# === Fix for ffmpeg
+AudioSegment.converter = shutil.which("ffmpeg")  # Works on Railway
+
+# === Temp Directory
+TEMP_DIR = Path("temp")
+TEMP_DIR.mkdir(exist_ok=True)
+
+# === CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Routers
+# === Routers
 app.include_router(audio_router, prefix="/api")
 app.include_router(live_router)
 app.include_router(analytics.router)
