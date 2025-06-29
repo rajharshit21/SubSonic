@@ -1,7 +1,18 @@
 {
   "build": {
-    "builder": "NIXPACKS"
+    "builder": "nixpacks"
   },
-  "start": "python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+  "nixpacks": {
+    "phases": {
+      "setup": {
+        "packages": ["python311", "pip"]
+      },
+      "install": {
+        "cmds": ["pip install -r requirement.txt"]
+      },
+      "start": {
+        "cmd": "python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+      }
+    }
+  }
 }
-  
