@@ -11,5 +11,5 @@ python-dotenv
 websockets
 openai
 gTTS
-
+sqlalchemy
 
