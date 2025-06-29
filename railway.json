@@ -8,12 +8,11 @@
         "packages": ["python311", "pip"]
       },
       "install": {
-        "cmds": ["pip install -r requirement.txt"]
+        "cmds": ["python3 -m pip install --upgrade pip", "pip install -r requirement.txt"]
       },
       "start": {
-        "cmd": "python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+        "cmd": "uvicorn main:app --host 0.0.0.0 --port 8000"
       }
     }
   }
 }
-
