@@ -9,3 +9,5 @@ noisereduce
 pedalboard
 python-dotenv
 websockets
+openai
+
