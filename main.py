@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from pydub import AudioSegment
-
+from flask_cors import CORS
 # ── Local modules
 from api.routes import router as audio_router
 from api.live_audio_ws import router as live_router
@@ -26,11 +26,8 @@ from audio_engine.effects.basic import apply_pitch_and_speed
 from audio_engine.effects.clarity import clarity_boost
 
 # === Initialize FastAPI app
-app = FastAPI(
-    title="SubSonic Voice Changer API",
-    root_path="/",
-    redirect_slashes=True,
-)
+app = Flask(__name__)
+CORS(app, origins=["https://subsonic.netlify.app"])
 
 # === Load .env
 load_dotenv()
@@ -45,10 +42,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 # === CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://subsonic.netlify.app"
-    ],
+    allow_origins=["https://subsonic.netlify.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
