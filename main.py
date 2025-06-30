@@ -1,7 +1,7 @@
 # main.py
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # Must be before any imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from pathlib import Path
 import shutil
@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from pydub import AudioSegment
-from flask_cors import CORS
-# ── Local modules
+
+# Local modules
 from api.routes import router as audio_router
 from api.live_audio_ws import router as live_router
 from api import analyze as analytics
@@ -26,18 +26,7 @@ from audio_engine.effects.basic import apply_pitch_and_speed
 from audio_engine.effects.clarity import clarity_boost
 
 # === Initialize FastAPI app
-app = Flask(__name__)
-CORS(app, origins=["https://subsonic.netlify.app"])
-
-# === Load .env
-load_dotenv()
-
-# === Fix for ffmpeg
-AudioSegment.converter = shutil.which("ffmpeg")  # Works on Railway
-
-# === Temp Directory
-TEMP_DIR = Path("temp")
-TEMP_DIR.mkdir(exist_ok=True)
+app = FastAPI()
 
 # === CORS setup
 app.add_middleware(
@@ -47,6 +36,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# === Load .env
+load_dotenv()
+
+# === Fix for ffmpeg
+AudioSegment.converter = shutil.which("ffmpeg")
+
+# === Temp Directory
+TEMP_DIR = Path("temp")
+TEMP_DIR.mkdir(exist_ok=True)
 
 # === Routers
 app.include_router(audio_router, prefix="/api")
