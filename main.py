@@ -25,17 +25,19 @@ from models.deep_denoise import deep_denoise
 from audio_engine.effects.basic import apply_pitch_and_speed
 from audio_engine.effects.clarity import clarity_boost
 
-# === Initialize FastAPI app
+
+
 app = FastAPI()
 
-# === CORS setup
+# Allow all origins (for testing — later you can restrict)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all for now
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all HTTP methods (POST, GET, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
+
 
 # === Load .env
 load_dotenv()
