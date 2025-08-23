@@ -1,60 +1,60 @@
 # main.py
-import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from pathlib import Path
+import sys
 import shutil
-import uuid
+import tempfile
+import gc
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from pydub import AudioSegment
 
-# Local modules
+# Local imports
 from api.routes import router as audio_router
 from api.live_audio_ws import router as live_router
 from api import analyze as analytics
 from api import tts_api
-from audio_engine.effects.denoise import remove_noise
-from audio_engine.effects.autotune import autotune_chunk
-from models.deep_denoise import deep_denoise
-from audio_engine.effects.basic import apply_pitch_and_speed
-from audio_engine.effects.clarity import clarity_boost
 
-import librosa, soundfile as sf
-
+# === App Init ===
 app = FastAPI()
 
-# === CORS (important for Vercel <-> Render communication)
+# === CORS (for Vercel <-> Render) ===
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://subsonic.vercel.app",  # your frontend
-        "http://localhost:5173",        # local dev (Vite)
+        "https://subsonic.vercel.app",  # frontend on Vercel
+        "http://localhost:5173",        # local dev
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# === Load .env
+# === Env Vars ===
 load_dotenv()
 
-# === Fix for ffmpeg
+# === FFMPEG Setup ===
 AudioSegment.converter = shutil.which("ffmpeg")
 
-# === Temp Directory
+# === Temp Directory ===
 TEMP_DIR = Path("temp")
 TEMP_DIR.mkdir(exist_ok=True)
 
-# === Routers
+# === Routers ===
 app.include_router(audio_router, prefix="/api")
 app.include_router(live_router)
 app.include_router(analytics.router, prefix="/api")
 app.include_router(tts_api.router, prefix="/api")
+
+# =========================
+# Root Endpoint
+# =========================
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to SubSonic Voice Changer API"}
 
 # =========================
 # WebSocket: live mic input
@@ -72,30 +72,8 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
 
 # =========================
-# REST Endpoints
+# Audio Transform Endpoint
 # =========================
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to SubSonic Voice Changer API"}
-
-@app.post("/api/apply_clarity_boost")
-async def apply_clarity(file: UploadFile = File(...)):
-    input_path = TEMP_DIR / file.filename
-    with open(input_path, "wb") as buf:
-        shutil.copyfileobj(file.file, buf)
-
-    output_path = clarity_boost(input_path)
-    return FileResponse(output_path, media_type="audio/wav", filename=output_path.name)
-
-@app.post("/api/apply_noise_removal")
-async def apply_noise_removal(file: UploadFile = File(...)):
-    input_path = TEMP_DIR / file.filename
-    with open(input_path, "wb") as buf:
-        shutil.copyfileobj(file.file, buf)
-
-    output_path = remove_noise(input_path)
-    return FileResponse(output_path, media_type="audio/wav", filename=output_path.name)
-
 @app.post("/api/transform/upload")
 async def transform_audio(
     file: UploadFile = File(...),
@@ -106,52 +84,46 @@ async def transform_audio(
     style: str = Form(""),
     autotune: bool = Form(False),
 ):
-    input_id = str(uuid.uuid4())
-    input_path = TEMP_DIR / f"input_{input_id}.wav"
-    output_path = TEMP_DIR / f"output_{input_id}.wav"
+    tmp_path = None
+    try:
+        # 1️⃣ Save uploaded file to disk
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
 
-    # Save uploaded file
-    with open(input_path, "wb") as f:
-        f.write(await file.read())
+        # 2️⃣ Load + downsample to save memory
+        sound = AudioSegment.from_file(tmp_path, format="mp3")
+        sound = sound.set_channels(1).set_frame_rate(16000)
 
-    # === Apply Deep Denoise if enabled ===
-    if denoise:
-        print("[INFO] Applying deep denoise")
-        input_path = Path(deep_denoise(str(input_path)))
+        # 3️⃣ Pitch shift
+        if pitch_shift != 0:
+            sound = sound._spawn(
+                sound.raw_data,
+                overrides={"frame_rate": int(sound.frame_rate * (2.0 ** (pitch_shift / 12.0)))}
+            ).set_frame_rate(16000)
 
-    # === Load audio more efficiently ===
-    import soundfile as sf
-    y, sr = sf.read(str(input_path), dtype="float32", always_2d=False)
+        # 4️⃣ Time stretch (speed change)
+        if time_stretch != 1.0:
+            sound = sound._spawn(
+                sound.raw_data,
+                overrides={"frame_rate": int(sound.frame_rate * time_stretch)}
+            ).set_frame_rate(16000)
 
-    # If stereo → convert to mono
-    if y.ndim > 1:
-        y = y.mean(axis=1)
+        # TODO: clarity, denoise, autotune, style → add back later (memory heavy)
 
-    # Resample to 16k if needed
-    if sr != 16000:
-        y = librosa.resample(y, orig_sr=sr, target_sr=16000)
-        sr = 16000
+        # 5️⃣ Export result
+        out_file = tmp_path.replace(".mp3", "_out.mp3")
+        sound.export(out_file, format="mp3")
 
-    # === Optional: Autotune ===
-    if autotune:
-        print("[INFO] Applying autotune")
-        y = autotune_chunk(y, sr)
+        # Free memory
+        del sound
+        gc.collect()
 
-    # === Optional: Clarity ===
-    if clarity:
-        print("[INFO] Applying clarity boost")
-        from audio_engine.effects.clarity import highpass_filter
-        y = highpass_filter(y, cutoff=100.0, fs=sr)
-        y = librosa.util.normalize(y)
+        return FileResponse(out_file, filename="output.mp3", media_type="audio/mpeg")
 
-    # === Optional: Pitch + Speed ===
-    if pitch_shift != 0 or time_stretch != 1.0:
-        print("[INFO] Applying pitch & speed")
-        y = apply_pitch_and_speed(y, sr, pitch_shift, time_stretch)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
-    # === Final normalization & save ===
-    y = librosa.util.normalize(y)
-    sf.write(output_path, y, sr, subtype="PCM_16")
-
-    return FileResponse(output_path, media_type="audio/wav", filename="processed.wav")
-
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
