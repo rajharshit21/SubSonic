@@ -110,6 +110,7 @@ async def transform_audio(
     input_path = TEMP_DIR / f"input_{input_id}.wav"
     output_path = TEMP_DIR / f"output_{input_id}.wav"
 
+    # Save uploaded file
     with open(input_path, "wb") as f:
         f.write(await file.read())
 
@@ -118,8 +119,18 @@ async def transform_audio(
         print("[INFO] Applying deep denoise")
         input_path = Path(deep_denoise(str(input_path)))
 
-    # === Load Audio ===
-    y, sr = librosa.load(input_path, sr=16000)
+    # === Load audio more efficiently ===
+    import soundfile as sf
+    y, sr = sf.read(str(input_path), dtype="float32", always_2d=False)
+
+    # If stereo → convert to mono
+    if y.ndim > 1:
+        y = y.mean(axis=1)
+
+    # Resample to 16k if needed
+    if sr != 16000:
+        y = librosa.resample(y, orig_sr=sr, target_sr=16000)
+        sr = 16000
 
     # === Optional: Autotune ===
     if autotune:
@@ -138,8 +149,9 @@ async def transform_audio(
         print("[INFO] Applying pitch & speed")
         y = apply_pitch_and_speed(y, sr, pitch_shift, time_stretch)
 
-    # === Final output normalization & save ===
+    # === Final normalization & save ===
     y = librosa.util.normalize(y)
-    sf.write(output_path, y, sr)
+    sf.write(output_path, y, sr, subtype="PCM_16")
 
     return FileResponse(output_path, media_type="audio/wav", filename="processed.wav")
+
