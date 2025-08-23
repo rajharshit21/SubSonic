@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import uuid
 
-from fastapi import FastAPI, UploadFile, File, Form, WebSocket, Query
+from fastapi import FastAPI, UploadFile, File, Form, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -19,25 +19,26 @@ from api.live_audio_ws import router as live_router
 from api import analyze as analytics
 from api import tts_api
 from audio_engine.effects.denoise import remove_noise
-from api.tts_api import router as tts_router
 from audio_engine.effects.autotune import autotune_chunk
 from models.deep_denoise import deep_denoise
 from audio_engine.effects.basic import apply_pitch_and_speed
 from audio_engine.effects.clarity import clarity_boost
 
-
+import librosa, soundfile as sf
 
 app = FastAPI()
 
-# Allow all origins (for testing — later you can restrict)
+# === CORS (important for Vercel <-> Render communication)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all for now
+    allow_origins=[
+        "https://subsonic.vercel.app",  # your frontend
+        "http://localhost:5173",        # local dev (Vite)
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods (POST, GET, OPTIONS, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
 
 # === Load .env
 load_dotenv()
@@ -52,12 +53,13 @@ TEMP_DIR.mkdir(exist_ok=True)
 # === Routers
 app.include_router(audio_router, prefix="/api")
 app.include_router(live_router)
-app.include_router(analytics.router)
-app.include_router(tts_api.router)
+app.include_router(analytics.router, prefix="/api")
+app.include_router(tts_api.router, prefix="/api")
 
 # =========================
 # WebSocket: live mic input
 # =========================
+@app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
@@ -72,15 +74,11 @@ async def websocket_endpoint(websocket: WebSocket):
 # =========================
 # REST Endpoints
 # =========================
-
 @app.get("/")
 def read_root():
     return {"message": "Welcome to SubSonic Voice Changer API"}
 
-
-
-
-@app.post("/apply_clarity_boost")
+@app.post("/api/apply_clarity_boost")
 async def apply_clarity(file: UploadFile = File(...)):
     input_path = TEMP_DIR / file.filename
     with open(input_path, "wb") as buf:
@@ -89,8 +87,7 @@ async def apply_clarity(file: UploadFile = File(...)):
     output_path = clarity_boost(input_path)
     return FileResponse(output_path, media_type="audio/wav", filename=output_path.name)
 
-
-@app.post("/apply_noise_removal")
+@app.post("/api/apply_noise_removal")
 async def apply_noise_removal(file: UploadFile = File(...)):
     input_path = TEMP_DIR / file.filename
     with open(input_path, "wb") as buf:
@@ -98,7 +95,6 @@ async def apply_noise_removal(file: UploadFile = File(...)):
 
     output_path = remove_noise(input_path)
     return FileResponse(output_path, media_type="audio/wav", filename=output_path.name)
-
 
 @app.post("/api/transform/upload")
 async def transform_audio(
@@ -110,7 +106,6 @@ async def transform_audio(
     style: str = Form(""),
     autotune: bool = Form(False),
 ):
-    import librosa, soundfile as sf
     input_id = str(uuid.uuid4())
     input_path = TEMP_DIR / f"input_{input_id}.wav"
     output_path = TEMP_DIR / f"output_{input_id}.wav"
@@ -134,7 +129,6 @@ async def transform_audio(
     # === Optional: Clarity ===
     if clarity:
         print("[INFO] Applying clarity boost")
-        # apply clarity directly to numpy array instead of via saved file
         from audio_engine.effects.clarity import highpass_filter
         y = highpass_filter(y, cutoff=100.0, fs=sr)
         y = librosa.util.normalize(y)
